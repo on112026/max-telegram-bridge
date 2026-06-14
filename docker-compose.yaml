@@ -1,0 +1,51 @@
+services:
+  api:
+    build:
+      context: ./api
+    container_name: max_bridge_api
+    env_file: .env
+    environment:
+      PYTHONUNBUFFERED: "1"
+    volumes:
+      - bridge-data:/data
+    expose:
+      - "8000"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health', timeout=3).status==200 else 1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+
+  bot:
+    build:
+      context: ./bot
+    container_name: max_bridge_bot
+    env_file: .env
+    environment:
+      PYTHONUNBUFFERED: "1"
+    volumes:
+      - bridge-data:/data
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+
+  watcher:
+    build:
+      context: ./watcher
+    container_name: max_bridge_watcher
+    env_file: .env
+    environment:
+      PYTHONUNBUFFERED: "1"
+      HEADFUL: "0"
+    volumes:
+      - bridge-data:/data
+    depends_on:
+      api:
+        condition: service_healthy
+    shm_size: 1g
+    restart: unless-stopped
+
+volumes:
+  bridge-data:
