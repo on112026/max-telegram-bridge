@@ -615,7 +615,11 @@ async def novnc_websocket(websocket):
 # на случай если @app.websocket() в какой-то версии FastAPI не зарегистрировал
 # маршрут корректно.
 app.add_websocket_route("/_vnc_ws", novnc_websocket)
-logger.info("WebSocket route /_vnc_ws registered explicitly via add_websocket_route")
+# Канонический путь noVNC — /vnc/websockify. Без явной регистрации WS-роута
+# на этом пути uvicorn отвергает WebSocket-апгрейд с 403 (как в логах Railway),
+# поэтому проксируем тот же обработчик и сюда.
+app.add_websocket_route("/vnc/websockify", novnc_websocket)
+logger.info("WebSocket routes /_vnc_ws and /vnc/websockify registered explicitly via add_websocket_route")
 
 
 @app.api_route("/vnc/{full_path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS", "HEAD"], include_in_schema=False)
