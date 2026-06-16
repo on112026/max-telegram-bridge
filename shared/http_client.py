@@ -95,3 +95,108 @@ class ApiClient:
         r = await self._client.get("/status", headers=self._headers())
         r.raise_for_status()
         return r.json()
+
+    # ------------------------------------------------------------------
+    # Headful-режим (управляемый браузер через watcher)
+    # ------------------------------------------------------------------
+
+    async def headful_enter(self) -> dict:
+        """Перевести watcher в headful-режим (показать экран MAX)."""
+        r = await self._client.post("/watcher/headful/enter", headers=self._headers())
+        r.raise_for_status()
+        return r.json()
+
+    async def headful_exit(self) -> dict:
+        """Выйти из headful-режима и возобновить обычную работу."""
+        r = await self._client.post("/watcher/headful/exit", headers=self._headers())
+        r.raise_for_status()
+        return r.json()
+
+    async def headful_state(self) -> dict:
+        r = await self._client.get("/watcher/headful/state", headers=self._headers())
+        r.raise_for_status()
+        return r.json()
+
+    async def headful_screenshot(self) -> bytes:
+        r = await self._client.get(
+            "/watcher/headful/screenshot", headers=self._headers()
+        )
+        r.raise_for_status()
+        return r.content
+
+    async def headful_click(self, selector: str) -> dict:
+        r = await self._client.post(
+            "/watcher/headful/click",
+            json={"selector": selector},
+            headers=self._headers(),
+        )
+        r.raise_for_status()
+        return r.json()
+
+    async def headful_type(self, text: str) -> dict:
+        r = await self._client.post(
+            "/watcher/headful/type",
+            json={"text": text},
+            headers=self._headers(),
+        )
+        r.raise_for_status()
+        return r.json()
+
+    async def headful_key(self, key: str) -> dict:
+        r = await self._client.post(
+            "/watcher/headful/key",
+            json={"key": key},
+            headers=self._headers(),
+        )
+        r.raise_for_status()
+        return r.json()
+
+    async def headful_fill(self, selector: str, value: str) -> dict:
+        r = await self._client.post(
+            "/watcher/headful/fill",
+            json={"selector": selector, "value": value},
+            headers=self._headers(),
+        )
+        r.raise_for_status()
+        return r.json()
+
+    async def headful_wait(self, selector: str, timeout: float = 5.0) -> dict:
+        r = await self._client.post(
+            "/watcher/headful/wait",
+            json={"selector": selector, "timeout": timeout},
+            headers=self._headers(),
+        )
+        r.raise_for_status()
+        return r.json()
+
+    async def headful_navigate(self, url: str) -> dict:
+        r = await self._client.post(
+            "/watcher/headful/navigate",
+            json={"url": url},
+            headers=self._headers(),
+        )
+        r.raise_for_status()
+        return r.json()
+
+    async def headful_reload(self) -> dict:
+        r = await self._client.post(
+            "/watcher/headful/reload", headers=self._headers()
+        )
+        r.raise_for_status()
+        return r.json()
+
+    async def headful_scroll(self, delta_y: int = 400) -> dict:
+        r = await self._client.post(
+            "/watcher/headful/scroll",
+            json={"delta_y": delta_y},
+            headers=self._headers(),
+        )
+        r.raise_for_status()
+        return r.json()
+
+    async def headful_clear_cookies(self) -> dict:
+        r = await self._client.post(
+            "/watcher/headful/cookies", json={"action": "clear"}, headers=self._headers()
+        )
+        r.raise_for_status()
+        return r.json()

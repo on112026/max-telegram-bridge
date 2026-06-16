@@ -14,7 +14,7 @@ sys.path.insert(0, str(ROOT / "api"))
 from contextlib import asynccontextmanager
 from typing import List, Optional
 
-from fastapi import Depends, FastAPI, HTTPException, Query
+from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response
 from pydantic import BaseModel
 
 from shared import db, models
@@ -344,3 +344,169 @@ def peek_2fa(request_id: int) -> TwoFaCodeOut:
 @app.get("/")
 def root() -> dict:
     return {"service": "max-telegram-bridge-api", "version": "1.0.0"}
+
+
+# ---------- Watcher headful-управление (прокси к watcher'у на 127.0.0.1:9000) ----------
+# Это позволяет боту (и пользователю через noVNC) управлять браузером watcher'а
+# в headful-режиме: ввод логина/пароля руками, прохождение капчи, 2FA и т.п.
+
+import os
+import aiohttp
+
+WATCHER_HEADFUL_URL = os.getenv("WATCHER_HEADFUL_URL", "http://127.0.0.1:9000")
+
+
+async def _proxy(method: str, path: str, json_body: dict | None = None, expect_binary: bool = False):
+    url = WATCHER_HEADFUL_URL + path
+    headers = {"X-Api-Key": os.getenv("BRIDGE_API_KEY", "")}
+    timeout = aiohttp.ClientTimeout(total=120)
+    try:
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.request(method, url, json=json_body, headers=headers) as r:
+                if expect_binary:
+                    return r.status, await r.read(), r.headers.get("Content-Type", "image/png")
+                text = await r.text()
+                return r.status, text, r.headers.get("Content-Type", "application/json")
+    except aiohttp.ClientError as exc:
+        return 502, f"watcher unreachable: {exc}", "text/plain"
+
+
+@app.get("/watcher/headful/state", dependencies=[Depends(verify_api_key)])
+async def watcher_headful_state():
+    status, body, _ = await _proxy("GET", "/state")
+    from fastapi.responses import JSONResponse
+    return JSONResponse(status_code=status, content=__import__("json").loads(body) if body and body.startswith("{") else {"raw": body})
+
+
+@app.get("/watcher/headful/screenshot", dependencies=[Depends(verify_api_key)])
+async def watcher_headful_screenshot():
+    status, data, ctype = await _proxy("GET", "/screenshot", expect_binary=True)
+    from fastapi.responses import Response
+    return Response(status_code=status, content=data, media_type=ctype)
+
+
+@app.post("/watcher/headful/enter", dependencies=[Depends(verify_api_key)])
+async def watcher_headful_enter():
+    status, body, _ = await _proxy("POST", "/enter")
+    from fastapi.responses import JSONResponse
+    return JSONResponse(status_code=status, content=__import__("json").loads(body) if body and body.startswith("{") else {"raw": body})
+
+
+@app.post("/watcher/headful/exit", dependencies=[Depends(verify_api_key)])
+async def watcher_headful_exit():
+    status, body, _ = await _proxy("POST", "/exit")
+    from fastapi.responses import JSONResponse
+    return JSONResponse(status_code=status, content=__import__("json").loads(body) if body and body.startswith("{") else {"raw": body})
+
+
+@app.post("/watcher/headful/click", dependencies=[Depends(verify_api_key)])
+async def watcher_headful_click(payload: dict):
+    status, body, _ = await _proxy("POST", "/click", json_body=payload)
+    from fastapi.responses import JSONResponse
+    return JSONResponse(status_code=status, content=__import__("json").loads(body) if body and body.startswith("{") else {"raw": body})
+
+
+@app.post("/watcher/headful/type", dependencies=[Depends(verify_api_key)])
+async def watcher_headful_type(payload: dict):
+    status, body, _ = await _proxy("POST", "/type", json_body=payload)
+    from fastapi.responses import JSONResponse
+    return JSONResponse(status_code=status, content=__import__("json").loads(body) if body and body.startswith("{") else {"raw": body})
+
+
+@app.post("/watcher/headful/key", dependencies=[Depends(verify_api_key)])
+async def watcher_headful_key(payload: dict):
+    status, body, _ = await _proxy("POST", "/key", json_body=payload)
+    from fastapi.responses import JSONResponse
+    return JSONResponse(status_code=status, content=__import__("json").loads(body) if body and body.startswith("{") else {"raw": body})
+
+
+@app.post("/watcher/headful/fill", dependencies=[Depends(verify_api_key)])
+async def watcher_headful_fill(payload: dict):
+    status, body, _ = await _proxy("POST", "/fill", json_body=payload)
+    from fastapi.responses import JSONResponse
+    return JSONResponse(status_code=status, content=__import__("json").loads(body) if body and body.startswith("{") else {"raw": body})
+
+
+@app.post("/watcher/headful/wait", dependencies=[Depends(verify_api_key)])
+async def watcher_headful_wait(payload: dict):
+    status, body, _ = await _proxy("POST", "/wait", json_body=payload)
+    from fastapi.responses import JSONResponse
+    return JSONResponse(status_code=status, content=__import__("json").loads(body) if body and body.startswith("{") else {"raw": body})
+
+
+@app.post("/watcher/headful/evaluate", dependencies=[Depends(verify_api_key)])
+async def watcher_headful_evaluate(payload: dict):
+    status, body, _ = await _proxy("POST", "/evaluate", json_body=payload)
+    from fastapi.responses import JSONResponse
+    return JSONResponse(status_code=status, content=__import__("json").loads(body) if body and body.startswith("{") else {"raw": body})
+
+
+@app.post("/watcher/headful/navigate", dependencies=[Depends(verify_api_key)])
+async def watcher_headful_navigate(payload: dict):
+    status, body, _ = await _proxy("POST", "/navigate", json_body=payload)
+    from fastapi.responses import JSONResponse
+    return JSONResponse(status_code=status, content=__import__("json").loads(body) if body and body.startswith("{") else {"raw": body})
+
+
+@app.post("/watcher/headful/reload", dependencies=[Depends(verify_api_key)])
+async def watcher_headful_reload():
+    status, body, _ = await _proxy("POST", "/reload")
+    from fastapi.responses import JSONResponse
+    return JSONResponse(status_code=status, content=__import__("json").loads(body) if body and body.startswith("{") else {"raw": body})
+
+
+@app.post("/watcher/headful/scroll", dependencies=[Depends(verify_api_key)])
+async def watcher_headful_scroll(payload: dict):
+    status, body, _ = await _proxy("POST", "/scroll", json_body=payload)
+    from fastapi.responses import JSONResponse
+    return JSONResponse(status_code=status, content=__import__("json").loads(body) if body and body.startswith("{") else {"raw": body})
+
+
+@app.post("/watcher/headful/cookies", dependencies=[Depends(verify_api_key)])
+async def watcher_headful_cookies(payload: dict):
+    status, body, _ = await _proxy("POST", "/cookies", json_body=payload)
+    from fastapi.responses import JSONResponse
+    return JSONResponse(status_code=status, content=__import__("json").loads(body) if body and body.startswith("{") else {"raw": body})
+
+# ---------- noVNC-прокси (чтобы вся VNC-сессия шла через :8000) ----------
+# Внутри supervisord novnc висит на 5900/6080. Здесь мы проксируем
+# /vnc/* (статику noVNC) и /vnc/websockify (WebSocket) на 127.0.0.1:6080,
+# чтобы Railway проксировал только :8000 (а :6080 не публичный).
+
+NOVNC_UPSTREAM = "http://127.0.0.1:6080"
+
+
+@app.api_route("/vnc/{full_path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS", "HEAD"], include_in_schema=False)
+async def novnc_proxy(full_path: str, request: Request):
+    import aiohttp
+    target = f"{NOVNC_UPSTREAM}/{full_path}"
+    if request.url.query:
+        target += f"?{request.url.query}"
+    headers = {k: v for k, v in request.headers.items() if k.lower() not in {"host", "x-api-key"}}
+    body = await request.body()
+    timeout = aiohttp.ClientTimeout(total=300)
+    async with aiohttp.ClientSession(timeout=timeout) as session:
+        async with session.request(request.method, target, data=body, headers=headers) as r:
+            content = await r.read()
+            return Response(
+                content=content,
+                status_code=r.status,
+                media_type=r.headers.get("Content-Type", "application/octet-stream"),
+                headers={k: v for k, v in r.headers.items() if k.lower() not in {"transfer-encoding", "content-encoding", "content-length"}},
+            )
+
+
+@app.get("/vnc", include_in_schema=False)
+async def vnc_redirect():
+    """Главная noVNC-страница (редирект на index.html с автоконнектом)."""
+    from fastapi.responses import HTMLResponse
+    return HTMLResponse(
+        """<!doctype html>
+<html><head>
+<title>MAX Watcher — noVNC</title>
+<meta charset="utf-8">
+<style>html,body,iframe{margin:0;padding:0;height:100%;width:100%;border:0}</style>
+</head><body>
+<iframe src="/vnc/vnc.html?autoconnect=true&resize=scale&path=vnc/websockify&password=__PASSWORD__" style="width:100vw;height:100vh"></iframe>
+</body></html>""".replace("__PASSWORD__", os.getenv("VNC_PASSWORD", ""))
+    )
