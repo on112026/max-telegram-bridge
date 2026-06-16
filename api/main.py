@@ -505,10 +505,23 @@ async def novnc_websocket(websocket):
     aiohttp.ClientSession.request() не умеет апгрейдить HTTP→WebSocket,
     поэтому используем явный ws_connect() и зеркалим байты между
     клиентом (noVNC в браузере) и апстримом (websockify → x11vnc).
+
+    ВАЖНО: в uvicorn вызов websocket.close() ДО websocket.accept() приводит
+    к отправке HTTP 403 в браузер. Поэтому accept() вызывается всегда
+    самым первым, а отказ делается корректным close() поверх принятого хэндшейка.
     """
     import asyncio
+    await websocket.accept()
+
     if not VNC_PUBLIC:
         await websocket.close(code=1008, reason="vnc disabled")
+        return
+
+    # Защитный гард: WebSocket-роут сработал — значит клиент действительно
+    # прислал Upgrade: websocket (иначе catch-all выше отдал бы 404).
+    upgrade = (websocket.headers.get("upgrade") or "").lower()
+    if upgrade != "websocket":
+        await websocket.close(code=1003, reason="upgrade header required")
         return
 
     upstream_url = NOVNC_UPSTREAM_WS + "/websockify"
@@ -579,6 +592,16 @@ async def novnc_websocket(websocket):
 async def novnc_proxy(full_path: str, request: Request):
     if not VNC_PUBLIC:
         return Response(status_code=404, content=b"vnc disabled")
+    # Не даём catch-all перехватывать WebSocket-handshake. Если кто-то шлёт
+    # plain GET на /vnc/websockify — возвращаем 404. Реальный WebSocket-апгрейд
+    # обрабатывается отдельным @app.websocket("/vnc/websockify") ниже.
+    if full_path == "websockify":
+        upgrade = request.headers.get("upgrade", "").lower()
+        if upgrade != "websocket":
+            return Response(
+                status_code=404,
+                content=b"websockify path requires WebSocket upgrade",
+            )
     target = f"{NOVNC_UPSTREAM_HTTP}/{full_path}"
     if request.url.query:
         target += f"?{request.url.query}"
