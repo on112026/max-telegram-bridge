@@ -18,7 +18,7 @@ from app.api_client import api
 from app.config import settings
 from app.forwarder import EventPoller
 from app.handlers import register_handlers
-from shared.logging import configure_logging
+from shared.log_setup import configure_logging
 
 logger = logging.getLogger(__name__)
 

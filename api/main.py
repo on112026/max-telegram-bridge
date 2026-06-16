@@ -20,7 +20,7 @@ from pydantic import BaseModel
 from shared import db, models
 from shared.api_auth import verify_api_key
 from shared.config import load_settings
-from shared.logging import configure_logging
+from shared.log_setup import configure_logging
 
 
 settings = load_settings()

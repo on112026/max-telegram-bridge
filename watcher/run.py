@@ -12,7 +12,7 @@ sys.path.insert(0, str(ROOT / "shared"))
 sys.path.insert(0, str(ROOT / "watcher"))
 
 from shared.config import load_settings
-from shared.logging import configure_logging
+from shared.log_setup import configure_logging
 
 
 def main() -> None:
