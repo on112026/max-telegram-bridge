@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import os
 import logging
-import secrets
 from dataclasses import dataclass, field
 from typing import List, Optional
 
@@ -75,11 +74,14 @@ class Settings:
 def load_settings() -> Settings:
     """Загружает настройки и применяет безопасные дефолты."""
 
-    api_key = _env("BRIDGE_API_KEY") or secrets.token_urlsafe(32)
-    if not _env("BRIDGE_API_KEY"):
-        logging.getLogger(__name__).warning(
-            "BRIDGE_API_KEY не задан в .env — сгенерирован одноразовый ключ для текущего запуска."
+    api_key = _env("BRIDGE_API_KEY")
+    if not api_key:
+        raise RuntimeError(
+            "BRIDGE_API_KEY is not set. Set it in your environment (e.g. "
+            "`openssl rand -hex 32`) before starting the bridge."
         )
+    # Подавляем варнинг у shutdown-логов: ключ провалидирован выше.
+    _ = logging.getLogger(__name__).warning
 
     return Settings(
         telegram_bot_token=_env("TELEGRAM_BOT_TOKEN", "") or "",

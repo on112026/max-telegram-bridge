@@ -26,6 +26,7 @@ class BrowserSession:
         self.context = await self._pw.chromium.launch_persistent_context(
             user_data_dir=settings.profile_dir,
             headless=not self._headful,
+            executable_path=os.getenv("CHROMIUM_PATH", "/usr/bin/chromium"),
             viewport={"width": 1280, "height": 800},
             user_agent=(
                 "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) "

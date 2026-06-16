@@ -13,8 +13,10 @@ import httpx
 
 
 def api_base_url() -> str:
-    # Контейнеры общаются по имени сервиса в compose
-    host = os.getenv("API_HOST_INTERNAL", "api")
+    # В монолитном деплое (например, Railway) все процессы крутятся в одном
+    # контейнере, и api доступен на localhost. Для compose-деплоя переопределите
+    # через API_HOST_INTERNAL=api.
+    host = os.getenv("API_HOST_INTERNAL", "localhost")
     port = int(os.getenv("API_PORT", "8000"))
     return f"http://{host}:{port}"
 

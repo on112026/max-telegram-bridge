@@ -1,69 +1,53 @@
 # syntax=docker/dockerfile:1.7
 #
-# Единый multi-stage Dockerfile для max-telegram-bridge.
-# Сборка:
-#   docker compose build api
-#   docker compose build bot
-#   docker compose build watcher
-# Каждый сервис указывает target: api|bot|watcher.
+# Монолитный Dockerfile для max-telegram-bridge.
+# Внутри одного контейнера supervisord поднимает три процесса:
+# api (FastAPI), bot (aiogram), watcher (Playwright + системный Chromium).
+# Подходит для managed-хостингов, где 1 Service = 1 Dockerfile
+# (Railway, Render, Koyeb, Fly и т.п.).
 
-# ---------- Общая база для api и bot ----------
-FROM python:3.11-slim AS base
+FROM python:3.11-slim
+
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
-    PIP_NO_CACHE_DIR=1
-WORKDIR /app
+    PIP_NO_CACHE_DIR=1 \
+    PYTHONPATH=/app:/app/api:/app/bot:/app/watcher:/app/shared
 
-
-# ---------- API (FastAPI) ----------
-FROM base AS api
-COPY api/requirements.txt /app/requirements.txt
-RUN pip install --no-cache-dir -r /app/requirements.txt
-
-COPY shared /app/shared
-COPY api    /app/api
-
-ENV PYTHONPATH=/app:/app/api
-WORKDIR /app/api
-EXPOSE 8000
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers"]
-
-
-# ---------- Bot (aiogram) ----------
-FROM base AS bot
-COPY bot/requirements.txt /app/requirements.txt
-RUN pip install --no-cache-dir -r /app/requirements.txt
-
-COPY shared /app/shared
-COPY bot    /app/bot
-
-ENV PYTHONPATH=/app:/app/bot
-WORKDIR /app/bot
-CMD ["python", "run.py"]
-
-
-# ---------- Watcher (Playwright Chromium) ----------
-FROM mcr.microsoft.com/playwright/python:v1.49.1-jammy AS watcher
-ENV PYTHONUNBUFFERED=1 \
-    PYTHONDONTWRITEBYTECODE=1 \
-    PIP_NO_CACHE_DIR=1
-WORKDIR /app
-
-# Системные библиотеки, нужные headless Chromium
+# Системные пакеты:
+#  - supervisor для управления процессами
+#  - chromium для Playwright (без скачивания собственного браузера)
+#  - шрифты и библиотеки, нужные headless Chromium
 RUN apt-get update && apt-get install -y --no-install-recommends \
+        supervisor \
+        chromium \
         fonts-liberation \
         libnss3 libatk1.0-0 libatk-bridge2.0-0 libcups2 libdrm2 libxkbcommon0 \
         libgbm1 libpango-1.0-0 libcairo2 libasound2 libxcomposite1 libxdamage1 \
         libxrandr2 libxfixes3 libxshmfence1 libxext6 libx11-6 libxcb1 libdbus-1-3 \
     && rm -rf /var/lib/apt/lists/*
 
-COPY watcher/requirements.txt /app/requirements.txt
-RUN pip install --no-cache-dir -r /app/requirements.txt \
+WORKDIR /app
+
+# 1) Зависимости — ставим объединённо
+COPY api/requirements.txt     /app/req/api.txt
+COPY bot/requirements.txt     /app/req/bot.txt
+COPY watcher/requirements.txt /app/req/watcher.txt
+RUN pip install --no-cache-dir -r /app/req/api.txt \
+ && pip install --no-cache-dir -r /app/req/bot.txt \
+ && pip install --no-cache-dir -r /app/req/watcher.txt \
  && pip install --no-cache-dir playwright==1.49.1
 
+# 2) Код
 COPY shared  /app/shared
+COPY api     /app/api
+COPY bot     /app/bot
 COPY watcher /app/watcher
 
-ENV PYTHONPATH=/app:/app/watcher
-WORKDIR /app/watcher
-CMD ["python", "run.py"]
+# 3) supervisord-конфиг
+COPY supervisord.conf /etc/supervisor/conf.d/bridge.conf
+
+# 4) Persistent-директория (для Railway / монолитного деплоя)
+RUN mkdir -p /data
+
+EXPOSE 8000
+CMD ["supervisord", "-c", "/etc/supervisor/conf.d/bridge.conf"]
