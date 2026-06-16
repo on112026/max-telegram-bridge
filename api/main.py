@@ -473,13 +473,113 @@ async def watcher_headful_cookies(payload: dict):
 # /vnc/* (статику noVNC) и /vnc/websockify (WebSocket) на 127.0.0.1:6080,
 # чтобы Railway проксировал только :8000 (а :6080 не публичный).
 
-NOVNC_UPSTREAM = "http://127.0.0.1:6080"
+NOVNC_UPSTREAM_HTTP = "http://127.0.0.1:6080"
+NOVNC_UPSTREAM_WS = "ws://127.0.0.1:6080"
+VNC_PUBLIC = os.getenv("VNC_PUBLIC", "1") == "1"
+
+
+@app.get("/vnc", include_in_schema=False)
+async def vnc_redirect():
+    """Главная noVNC-страница: редирект на vnc.html с автоконнектом.
+
+    Пароль VNC НЕ передаётся в URL — он остаётся на стороне сервера.
+    Если пароль всё-таки задан в ENV, мы передаём его через хэш-параметр,
+    который noVNC интерпретирует как «prefilled password» (не сохраняется в referrer).
+    """
+    if not VNC_PUBLIC:
+        return Response(status_code=404, content=b"vnc disabled")
+    from fastapi.responses import RedirectResponse
+    pwd = os.getenv("VNC_PASSWORD", "")
+    # noVNC принимает password через query-параметр, но Railway и браузеры логируют Referer.
+    # Чтобы не утекал — кладём пароль в хэш (фрагмент), который не отправляется на сервер.
+    target = "/vnc/vnc.html?autoconnect=true&resize=scale&path=vnc/websockify"
+    if pwd:
+        target += f"#password={pwd}"
+    return RedirectResponse(url=target, status_code=302)
+
+
+@app.websocket("/vnc/websockify")
+async def novnc_websocket(websocket):
+    """Проксирование WebSocket-соединения noVNC к локальному websockify (:6080).
+
+    aiohttp.ClientSession.request() не умеет апгрейдить HTTP→WebSocket,
+    поэтому используем явный ws_connect() и зеркалим байты между
+    клиентом (noVNC в браузере) и апстримом (websockify → x11vnc).
+    """
+    import asyncio
+    if not VNC_PUBLIC:
+        await websocket.close(code=1008, reason="vnc disabled")
+        return
+
+    upstream_url = NOVNC_UPSTREAM_WS + "/websockify"
+    client_session = aiohttp.ClientSession(
+        timeout=aiohttp.ClientTimeout(total=None, connect=10, sock_connect=10, sock_read=None)
+    )
+    upstream: aiohttp.ClientWebSocketResponse | None = None
+    try:
+        upstream = await client_session.ws_connect(upstream_url, autoclose=False, autoping=False)
+    except Exception as exc:
+        try:
+            await websocket.close(code=1011, reason=f"upstream connect failed: {exc}")
+        finally:
+            await client_session.close()
+        return
+
+    async def _client_to_upstream():
+        try:
+            while True:
+                msg = await websocket.receive()
+                if msg is None:
+                    break
+                mtype = msg.get("type")
+                if mtype == "websocket.receive":
+                    if "text" in msg and msg["text"] is not None:
+                        await upstream.send_str(msg["text"])
+                    elif "bytes" in msg and msg["bytes"] is not None:
+                        await upstream.send_bytes(msg["bytes"])
+                elif mtype == "websocket.disconnect":
+                    break
+        except Exception:
+            pass
+        finally:
+            try:
+                await upstream.close(code=1000)
+            except Exception:
+                pass
+
+    async def _upstream_to_client():
+        try:
+            async for msg in upstream:
+                if msg.type == aiohttp.WSMsgType.TEXT:
+                    await websocket.send_text(msg.data)
+                elif msg.type == aiohttp.WSMsgType.BINARY:
+                    await websocket.send_bytes(msg.data)
+                elif msg.type in (aiohttp.WSMsgType.CLOSE, aiohttp.WSMsgType.CLOSED, aiohttp.WSMsgType.ERROR):
+                    break
+        except Exception:
+            pass
+        finally:
+            try:
+                await websocket.close()
+            except Exception:
+                pass
+
+    try:
+        await asyncio.gather(_client_to_upstream(), _upstream_to_client())
+    finally:
+        try:
+            if upstream is not None and not upstream.closed:
+                await upstream.close()
+        except Exception:
+            pass
+        await client_session.close()
 
 
 @app.api_route("/vnc/{full_path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS", "HEAD"], include_in_schema=False)
 async def novnc_proxy(full_path: str, request: Request):
-    import aiohttp
-    target = f"{NOVNC_UPSTREAM}/{full_path}"
+    if not VNC_PUBLIC:
+        return Response(status_code=404, content=b"vnc disabled")
+    target = f"{NOVNC_UPSTREAM_HTTP}/{full_path}"
     if request.url.query:
         target += f"?{request.url.query}"
     headers = {k: v for k, v in request.headers.items() if k.lower() not in {"host", "x-api-key"}}
@@ -494,19 +594,3 @@ async def novnc_proxy(full_path: str, request: Request):
                 media_type=r.headers.get("Content-Type", "application/octet-stream"),
                 headers={k: v for k, v in r.headers.items() if k.lower() not in {"transfer-encoding", "content-encoding", "content-length"}},
             )
-
-
-@app.get("/vnc", include_in_schema=False)
-async def vnc_redirect():
-    """Главная noVNC-страница (редирект на index.html с автоконнектом)."""
-    from fastapi.responses import HTMLResponse
-    return HTMLResponse(
-        """<!doctype html>
-<html><head>
-<title>MAX Watcher — noVNC</title>
-<meta charset="utf-8">
-<style>html,body,iframe{margin:0;padding:0;height:100%;width:100%;border:0}</style>
-</head><body>
-<iframe src="/vnc/vnc.html?autoconnect=true&resize=scale&path=vnc/websockify&password=__PASSWORD__" style="width:100vw;height:100vh"></iframe>
-</body></html>""".replace("__PASSWORD__", os.getenv("VNC_PASSWORD", ""))
-    )

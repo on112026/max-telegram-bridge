@@ -67,5 +67,48 @@ class BotApi:
             r.raise_for_status()
             return r.json()["request_id"]
 
+    # ------------------------------------------------------------------
+    # Headful-режим (делегируем в ApiClient)
+    # ------------------------------------------------------------------
+
+    async def headful_enter(self) -> Dict[str, Any]:
+        return await self._client.headful_enter()
+
+    async def headful_exit(self) -> Dict[str, Any]:
+        return await self._client.headful_exit()
+
+    async def headful_state(self) -> Dict[str, Any]:
+        return await self._client.headful_state()
+
+    async def headful_screenshot(self) -> bytes:
+        return await self._client.headful_screenshot()
+
+    async def headful_click(self, selector: str) -> Dict[str, Any]:
+        return await self._client.headful_click(selector)
+
+    async def headful_type(self, text: str) -> Dict[str, Any]:
+        return await self._client.headful_type(text)
+
+    async def headful_key(self, key: str) -> Dict[str, Any]:
+        return await self._client.headful_key(key)
+
+    async def headful_fill(self, selector: str, value: str) -> Dict[str, Any]:
+        return await self._client.headful_fill(selector, value)
+
+    async def headful_wait(self, selector: str, timeout: float = 5.0) -> Dict[str, Any]:
+        return await self._client.headful_wait(selector, timeout=timeout)
+
+    async def headful_navigate(self, url: str) -> Dict[str, Any]:
+        return await self._client.headful_navigate(url)
+
+    async def headful_reload(self) -> Dict[str, Any]:
+        return await self._client.headful_reload()
+
+    async def headful_scroll(self, delta_y: int = 400) -> Dict[str, Any]:
+        return await self._client.headful_scroll(delta_y=delta_y)
+
+    async def headful_clear_cookies(self) -> Dict[str, Any]:
+        return await self._client.headful_clear_cookies()
+
 
 api = BotApi()
