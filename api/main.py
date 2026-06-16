@@ -618,6 +618,7 @@ app.add_websocket_route("/_vnc_ws", novnc_websocket)
 # Канонический путь noVNC — /vnc/websockify. Без явной регистрации WS-роута
 # на этом пути uvicorn отвергает WebSocket-апгрейд с 403 (как в логах Railway),
 # поэтому проксируем тот же обработчик и сюда.
+
 app.add_websocket_route("/vnc/websockify", novnc_websocket)
 logger.info("WebSocket routes /_vnc_ws and /vnc/websockify registered explicitly via add_websocket_route")
 
