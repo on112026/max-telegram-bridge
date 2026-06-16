@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, List, Optional
 
-from shared.api_auth import ApiClient
+from shared.http_client import ApiClient
 
 from app.config import settings
 

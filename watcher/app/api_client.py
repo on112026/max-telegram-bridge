@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 
-from shared.api_auth import ApiClient
+from shared.http_client import ApiClient
 
 from app.config import settings
 

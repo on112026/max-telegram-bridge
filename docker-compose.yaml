@@ -1,7 +1,10 @@
 services:
   api:
     build:
-      context: ./api
+      context: .
+      dockerfile: Dockerfile
+      target: api
+    image: max-telegram-bridge-api:local
     container_name: max_bridge_api
     env_file: .env
     environment:
@@ -19,7 +22,10 @@ services:
 
   bot:
     build:
-      context: ./bot
+      context: .
+      dockerfile: Dockerfile
+      target: bot
+    image: max-telegram-bridge-bot:local
     container_name: max_bridge_bot
     env_file: .env
     environment:
@@ -33,7 +39,10 @@ services:
 
   watcher:
     build:
-      context: ./watcher
+      context: .
+      dockerfile: Dockerfile
+      target: watcher
+    image: max-telegram-bridge-watcher:local
     container_name: max_bridge_watcher
     env_file: .env
     environment:
