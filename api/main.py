@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 import sys
 from pathlib import Path
@@ -16,6 +17,8 @@ from typing import List, Optional
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response
 from pydantic import BaseModel
+
+logger = logging.getLogger(__name__)
 
 from shared import db, models
 from shared.api_auth import verify_api_key
@@ -492,13 +495,16 @@ async def vnc_redirect():
     pwd = os.getenv("VNC_PASSWORD", "")
     # noVNC принимает password через query-параметр, но Railway и браузеры логируют Referer.
     # Чтобы не утекал — кладём пароль в хэш (фрагмент), который не отправляется на сервер.
-    target = "/vnc/vnc.html?autoconnect=true&resize=scale&path=vnc/websockify"
+    # WebSocket-прокси вынесен на путь /_vnc_ws, чтобы гарантированно не
+    # пересекаться с HTTP catch-all /vnc/{full_path:path} (любая регрессия
+    # маршрутизации FastAPI/Starlette не сможет его перехватить).
+    target = "/vnc/vnc.html?autoconnect=true&resize=scale&path=_vnc_ws"
     if pwd:
         target += f"#password={pwd}"
     return RedirectResponse(url=target, status_code=302)
 
 
-@app.websocket("/vnc/websockify")
+@app.websocket("/_vnc_ws")
 async def novnc_websocket(websocket):
     """Проксирование WebSocket-соединения noVNC к локальному websockify (:6080).
 
@@ -511,7 +517,22 @@ async def novnc_websocket(websocket):
     самым первым, а отказ делается корректным close() поверх принятого хэндшейка.
     """
     import asyncio
+    try:
+        logger.info(
+            "novnc_websocket ENTERED url=%s client=%s upgrade=%r connection=%r ua=%r",
+            str(websocket.url),
+            websocket.client,
+            websocket.headers.get("upgrade"),
+            websocket.headers.get("connection"),
+            (websocket.headers.get("user-agent") or "")[:80],
+        )
+    except Exception:
+        pass
     await websocket.accept()
+    try:
+        logger.info("novnc_websocket ACCEPTED; opening upstream ws to websockify:6080")
+    except Exception:
+        pass
 
     if not VNC_PUBLIC:
         await websocket.close(code=1008, reason="vnc disabled")
@@ -531,7 +552,9 @@ async def novnc_websocket(websocket):
     upstream: aiohttp.ClientWebSocketResponse | None = None
     try:
         upstream = await client_session.ws_connect(upstream_url, autoclose=False, autoping=False)
+        logger.info("novnc_websocket upstream connected: %s", upstream_url)
     except Exception as exc:
+        logger.warning("novnc_websocket upstream connect failed: %r", exc)
         try:
             await websocket.close(code=1011, reason=f"upstream connect failed: {exc}")
         finally:
@@ -588,20 +611,17 @@ async def novnc_websocket(websocket):
         await client_session.close()
 
 
+# Дополнительно регистрируем WS-роут явно через Starlette APIRouter — страховка
+# на случай если @app.websocket() в какой-то версии FastAPI не зарегистрировал
+# маршрут корректно.
+app.add_websocket_route("/_vnc_ws", novnc_websocket)
+logger.info("WebSocket route /_vnc_ws registered explicitly via add_websocket_route")
+
+
 @app.api_route("/vnc/{full_path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS", "HEAD"], include_in_schema=False)
 async def novnc_proxy(full_path: str, request: Request):
     if not VNC_PUBLIC:
         return Response(status_code=404, content=b"vnc disabled")
-    # Не даём catch-all перехватывать WebSocket-handshake. Если кто-то шлёт
-    # plain GET на /vnc/websockify — возвращаем 404. Реальный WebSocket-апгрейд
-    # обрабатывается отдельным @app.websocket("/vnc/websockify") ниже.
-    if full_path == "websockify":
-        upgrade = request.headers.get("upgrade", "").lower()
-        if upgrade != "websocket":
-            return Response(
-                status_code=404,
-                content=b"websockify path requires WebSocket upgrade",
-            )
     target = f"{NOVNC_UPSTREAM_HTTP}/{full_path}"
     if request.url.query:
         target += f"?{request.url.query}"
